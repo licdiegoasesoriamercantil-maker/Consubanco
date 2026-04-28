@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tiempos de Agentes</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: system-ui, 'Segoe UI', sans-serif; }
+        body { background: #f0f2f5; margin: 0; padding: 20px; }
+        .container { max-width: 1600px; margin: 0 auto; }
+        h1 { text-align: center; color: #1e3a5f; margin-bottom: 5px; }
+        .sub { text-align: center; color: #4a627a; margin-bottom: 25px; font-size: 14px; }
+        .filters { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-end; background: white; border-radius: 20px; padding: 20px; margin-bottom: 25px; }
+        .filter-group { display: flex; flex-direction: column; gap: 6px; }
+        .filter-group label { font-weight: 600; color: #1e4663; }
+        select, button { padding: 8px 16px; border-radius: 40px; border: 1px solid #ccc; background: white; font-size: 14px; cursor: pointer; }
+        button { background: #1e5f8e; color: white; border: none; font-weight: bold; }
+        button:hover { background: #0f4a6f; }
+        .chart-row { display: flex; flex-wrap: wrap; gap: 25px; margin-bottom: 30px; }
+        .chart-box { flex: 1; min-width: 350px; background: white; border-radius: 20px; padding: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        .chart-box h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.2rem; color: #2c3e66; border-left: 5px solid #2c7da0; padding-left: 12px; }
+        canvas { max-height: 400px; width: 100%; }
+        .tabla-wrapper { overflow-x: auto; max-height: 550px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #ddd; padding: 8px 6px; text-align: left; vertical-align: top; }
+        th { background: #eef2f7; font-weight: 600; position: sticky; top: 0; }
+        .exceso-bueno { background: #e0f2e9; color: #0e6b3e; font-weight: bold; }
+        .falta-malo { background: #ffeeee; color: #b91c1c; font-weight: bold; }
+        .ok { background: #e8f0fe; color: #1e5f8e; }
+        footer { text-align: center; margin-top: 30px; color: #6c757d; font-size: 12px; }
+        .btn-refresh { background: #1e5f8e; color: white; border: none; padding: 8px 20px; border-radius: 40px; cursor: pointer; font-weight: bold; }
+        .btn-refresh:hover { background: #0f4a6f; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>📊 Dashboard de Tiempos de Agentes</h1>
+   
+
+    <div class="filters">
+        <div class="filter-group"><label>📆 Periodo:</label><select id="periodoSelect"><option value="dia">Día</option><option value="semana">Semana</option><option value="mes">Mes</option></select></div>
+        <div class="filter-group"><label>🗓️ Seleccionar:</label><select id="valorSelect"></select></div>
+        <div class="filter-group"><button id="refreshBtn" class="btn-refresh">🔄 Actualizar Dashboard</button></div>
+    </div>
+
+    <div id="dashboardContent">
+        <div class="chart-row">
+            <div class="chart-box"><h3>⏱️ Tiempos por Agente (horas)</h3><canvas id="chartTiempos"></canvas></div>
+            <div class="chart-box"><h3>⚖️ Cumplimiento de Pausas (diferencia +/- minutos)</h3><canvas id="chartCumplimiento"></canvas></div>
+        </div>
+        <div class="chart-row">
+            <div class="chart-box"><h3>⚠️ Excesos de tiempo (solo positivo, minutos)</h3><canvas id="chartExcesos"></canvas></div>
+            <div class="chart-box"><h3>📋 Resumen por agente</h3><div class="tabla-wrapper" id="tablaResumen"></div></div>
+        </div>
+    </div>
+    
+</div>
+
+<script>
+    // ===================== DATOS INCRUSTADOS (desde Tiempos.xlsx) =====================
+    const datosCompletos = [
+        {Fecha:"2026-04-01",Nombre:"ERICA TERESA PADILLA TORRES",Total:470.1,DISPONIBLE:86,EN_LLAMADA:75.7,DESPUES_LLAMADA:29.6,PAUSA:42,PAUSECOMIDA:60.1,PAUSEBAÑO:12.8,PAUSERETRO:40.1,Llamadas:227},
+        {Fecha:"2026-04-01",Nombre:"MIRIAM VEGA",Total:510.8,DISPONIBLE:114,EN_LLAMADA:157.1,DESPUES_LLAMADA:66,PAUSA:0.1,PAUSECOMIDA:1.9,PAUSEBAÑO:10,PAUSERETRO:63.9,Llamadas:187},
+        {Fecha:"2026-04-01",Nombre:"AIDE SILVIA  CASTRO MORALES",Total:546.1,DISPONIBLE:112.9,EN_LLAMADA:162.1,DESPUES_LLAMADA:43.8,PAUSA:0,PAUSECOMIDA:52,PAUSEBAÑO:16.6,PAUSERETRO:20,Llamadas:262},
+        {Fecha:"2026-04-01",Nombre:"PAMELA VALERIA  ARELLANO MARADIAGA",Total:357.7,DISPONIBLE:129.1,EN_LLAMADA:144.4,DESPUES_LLAMADA:28.6,PAUSA:0,PAUSECOMIDA:29.9,PAUSEBAÑO:5.9,PAUSERETRO:0,Llamadas:215},
+        {Fecha:"2026-04-01",Nombre:"ADRIANA ANGELICA FLORES RAMIREZ",Total:347.2,DISPONIBLE:115.9,EN_LLAMADA:94.2,DESPUES_LLAMADA:45.9,PAUSA:8.9,PAUSECOMIDA:36.3,PAUSEBAÑO:7.6,PAUSERETRO:0,Llamadas:212},
+        {Fecha:"2026-04-01",Nombre:"Yunuen  Garcia Zarazua",Total:530.4,DISPONIBLE:152.9,EN_LLAMADA:188.9,DESPUES_LLAMADA:103.7,PAUSA:10.9,PAUSECOMIDA:58,PAUSEBAÑO:9.8,PAUSERETRO:2.2,Llamadas:277},
+        {Fecha:"2026-04-01",Nombre:"MARIA GUADALUPE  LOPEZ FLORES",Total:526.7,DISPONIBLE:150.3,EN_LLAMADA:161,DESPUES_LLAMADA:57.4,PAUSA:5.7,PAUSECOMIDA:0,PAUSEBAÑO:13.5,PAUSERETRO:20.2,Llamadas:289},
+        {Fecha:"2026-04-01",Nombre:"Jessica Gomez Zarazua",Total:496.9,DISPONIBLE:83.9,EN_LLAMADA:62.1,DESPUES_LLAMADA:56.8,PAUSA:41.1,PAUSECOMIDA:60.3,PAUSEBAÑO:19.9,PAUSERETRO:0,Llamadas:258},
+        {Fecha:"2026-04-01",Nombre:"MONSERRAT ESTEFANIA  CHAVEZ SANCHEZ",Total:343.7,DISPONIBLE:116.4,EN_LLAMADA:88.4,DESPUES_LLAMADA:60.3,PAUSA:0.6,PAUSECOMIDA:36,PAUSEBAÑO:9.8,PAUSERETRO:5.4,Llamadas:220},
+        {Fecha:"2026-04-01",Nombre:"JESUS ANGEL ZAVALA SANCHEZ",Total:345.6,DISPONIBLE:93.7,EN_LLAMADA:144,DESPUES_LLAMADA:37.7,PAUSA:2.1,PAUSECOMIDA:29.2,PAUSEBAÑO:13.4,PAUSERETRO:2,Llamadas:161},
+        {Fecha:"2026-04-01",Nombre:"ROBERTO JAIR NAVARRETE CARRILLO",Total:516,DISPONIBLE:190.4,EN_LLAMADA:183.7,DESPUES_LLAMADA:37.6,PAUSA:0,PAUSECOMIDA:60.4,PAUSEBAÑO:18.5,PAUSERETRO:0,Llamadas:215},
+        {Fecha:"2026-04-01",Nombre:"JATZIRI NOHEMI SANCHEZ ARELLANO",Total:340.9,DISPONIBLE:119.6,EN_LLAMADA:120.3,DESPUES_LLAMADA:39.3,PAUSA:0.9,PAUSECOMIDA:29.5,PAUSEBAÑO:0,PAUSERETRO:20.3,Llamadas:207},
+        {Fecha:"2026-04-01",Nombre:"JORGE JAVIER  LICEAGA PEREZ",Total:505,DISPONIBLE:136.2,EN_LLAMADA:196.2,DESPUES_LLAMADA:78.8,PAUSA:21,PAUSECOMIDA:58.4,PAUSEBAÑO:4.6,PAUSERETRO:0,Llamadas:239},
+        {Fecha:"2026-04-01",Nombre:"JAIME PACHECO GONZALEZ",Total:342.4,DISPONIBLE:85.3,EN_LLAMADA:124.1,DESPUES_LLAMADA:34.7,PAUSA:3.5,PAUSECOMIDA:0,PAUSEBAÑO:20.3,PAUSERETRO:0,Llamadas:150},
+        {Fecha:"2026-04-01",Nombre:"STEFAN ARROYO OCHOA",Total:401,DISPONIBLE:116.3,EN_LLAMADA:164.4,DESPUES_LLAMADA:30.8,PAUSA:0,PAUSECOMIDA:31.9,PAUSEBAÑO:20.5,PAUSERETRO:12,Llamadas:220},
+        {Fecha:"2026-04-01",Nombre:"WENDY VERONICA BAEZ MONROY",Total:353.1,DISPONIBLE:105.5,EN_LLAMADA:127.1,DESPUES_LLAMADA:51.7,PAUSA:0,PAUSECOMIDA:29,PAUSEBAÑO:5,PAUSERETRO:11.6,Llamadas:204},
+        {Fecha:"2026-04-02",Nombre:"PAULA BENITEZ RODRIGUEZ",Total:367.3,DISPONIBLE:123.4,EN_LLAMADA:142.3,DESPUES_LLAMADA:29.5,PAUSA:0,PAUSECOMIDA:24.8,PAUSEBAÑO:6.6,PAUSERETRO:0,Llamadas:161},
+        {Fecha:"2026-04-02",Nombre:"ROBERTO JAIR NAVARRETE CARRILLO",Total:476.8,DISPONIBLE:204.8,EN_LLAMADA:160.7,DESPUES_LLAMADA:31.7,PAUSA:0,PAUSECOMIDA:60.2,PAUSEBAÑO:6.6,PAUSERETRO:0,Llamadas:214},
+        {Fecha:"2026-04-02",Nombre:"JAIME PACHECO GONZALEZ",Total:353.8,DISPONIBLE:104.6,EN_LLAMADA:123.5,DESPUES_LLAMADA:26.1,PAUSA:5,PAUSECOMIDA:30.6,PAUSEBAÑO:12.7,PAUSERETRO:0,Llamadas:150},
+        {Fecha:"2026-04-02",Nombre:"WENDY VERONICA BAEZ MONROY",Total:352.1,DISPONIBLE:111.8,EN_LLAMADA:98.6,DESPUES_LLAMADA:42,PAUSA:0,PAUSECOMIDA:26.1,PAUSEBAÑO:5.6,PAUSERETRO:20.1,Llamadas:203},
+        {Fecha:"2026-04-02",Nombre:"EVELYN TAMARA LARIOS RUBIO",Total:411,DISPONIBLE:129,EN_LLAMADA:137.2,DESPUES_LLAMADA:30,PAUSA:0,PAUSECOMIDA:29.7,PAUSEBAÑO:9.1,PAUSERETRO:20.4,Llamadas:183},
+        {Fecha:"2026-04-02",Nombre:"STEFAN ARROYO OCHOA",Total:346.8,DISPONIBLE:108.1,EN_LLAMADA:119.5,DESPUES_LLAMADA:22.1,PAUSA:0,PAUSECOMIDA:34.9,PAUSEBAÑO:15.9,PAUSERETRO:1.4,Llamadas:166},
+        {Fecha:"2026-04-03",Nombre:"WENDY VERONICA BAEZ MONROY",Total:345.4,DISPONIBLE:101.3,EN_LLAMADA:132.6,DESPUES_LLAMADA:40.2,PAUSA:0,PAUSECOMIDA:28.9,PAUSEBAÑO:5.2,PAUSERETRO:0,Llamadas:168},
+        {Fecha:"2026-04-03",Nombre:"JAIME PACHECO GONZALEZ",Total:350.7,DISPONIBLE:117,EN_LLAMADA:94.1,DESPUES_LLAMADA:31.2,PAUSA:0,PAUSECOMIDA:29.7,PAUSEBAÑO:18.7,PAUSERETRO:1.2,Llamadas:165},
+        {Fecha:"2026-04-06",Nombre:"ERICA TERESA PADILLA TORRES",Total:391.1,DISPONIBLE:116,EN_LLAMADA:127.1,DESPUES_LLAMADA:37,PAUSA:35.5,PAUSECOMIDA:0,PAUSEBAÑO:8.3,PAUSERETRO:3.8,Llamadas:248},
+        {Fecha:"2026-04-06",Nombre:"JAIME PACHECO GONZALEZ",Total:414.3,DISPONIBLE:103.5,EN_LLAMADA:148.5,DESPUES_LLAMADA:33,PAUSA:9.7,PAUSECOMIDA:32.3,PAUSEBAÑO:15.1,PAUSERETRO:0,Llamadas:182},
+        {Fecha:"2026-04-06",Nombre:"STEFAN ARROYO OCHOA",Total:401.7,DISPONIBLE:122.6,EN_LLAMADA:183.2,DESPUES_LLAMADA:32.6,PAUSA:0,PAUSECOMIDA:32.1,PAUSEBAÑO:20.5,PAUSERETRO:4.6,Llamadas:189},
+        {Fecha:"2026-04-10",Nombre:"Yunuen  Garcia Zarazua",Total:297.1,DISPONIBLE:52.7,EN_LLAMADA:135.9,DESPUES_LLAMADA:64.1,PAUSA:0.9,PAUSECOMIDA:0,PAUSEBAÑO:4.1,PAUSERETRO:0,Llamadas:212},
+        {Fecha:"2026-04-10",Nombre:"JESUS ANGEL ZAVALA SANCHEZ",Total:364.6,DISPONIBLE:54.9,EN_LLAMADA:157.5,DESPUES_LLAMADA:61.2,PAUSA:0,PAUSECOMIDA:29.9,PAUSEBAÑO:13.4,PAUSERETRO:0,Llamadas:265},
+        {Fecha:"2026-04-15",Nombre:"ROBERTO JAIR NAVARRETE CARRILLO",Total:539,DISPONIBLE:170.4,EN_LLAMADA:192.1,DESPUES_LLAMADA:39.5,PAUSA:0,PAUSECOMIDA:60.4,PAUSEBAÑO:13.2,PAUSERETRO:20.2,Llamadas:269},
+        {Fecha:"2026-04-20",Nombre:"MARIA GUADALUPE  LOPEZ FLORES",Total:516.5,DISPONIBLE:115.4,EN_LLAMADA:113.8,DESPUES_LLAMADA:38.1,PAUSA:12.6,PAUSECOMIDA:59.4,PAUSEBAÑO:8.3,PAUSERETRO:4.9,Llamadas:201},
+        {Fecha:"2026-04-20",Nombre:"WENDY VERONICA BAEZ MONROY",Total:352.3,DISPONIBLE:81.5,EN_LLAMADA:145.3,DESPUES_LLAMADA:34.2,PAUSA:1.7,PAUSECOMIDA:28.5,PAUSEBAÑO:1.4,PAUSERETRO:0,Llamadas:143},
+        {Fecha:"2026-04-25",Nombre:"JATZIRI NOHEMI SANCHEZ ARELLANO",Total:298.9,DISPONIBLE:71.6,EN_LLAMADA:111.9,DESPUES_LLAMADA:18.8,PAUSA:0,PAUSECOMIDA:0,PAUSEBAÑO:0,PAUSERETRO:0,Llamadas:136},
+        {Fecha:"2026-04-27",Nombre:"JESUS ANGEL ZAVALA SANCHEZ",Total:354.6,DISPONIBLE:105.8,EN_LLAMADA:140.5,DESPUES_LLAMADA:28.4,PAUSA:0.7,PAUSECOMIDA:27.6,PAUSEBAÑO:8.9,PAUSERETRO:20.1,Llamadas:147}
+    ];
+
+    // ===================== REGLAS =====================
+    const AGENTES_ESPECIALES = [
+        "PAMELA VALERIA  ARELLANO MARADIAGA", "JESUS ANGEL ZAVALA SANCHEZ", "JATZIRI NOHEMI SANCHEZ ARELLANO",
+        "JAIME PACHECO GONZALEZ", "STEFAN ARROYO OCHOA", "WENDY VERONICA BAEZ MONROY", 
+        "PAULA BENITEZ RODRIGUEZ", "EVELYN TAMARA LARIOS RUBIO"
+    ];
+    
+    const REGLAS = {
+        normal: { comida: 60, bano: 15, retro: 10, conexionHoras: 9 },
+        especial: { comida: 20, bano: 10, retro: 10, conexionHoras: 6 }
+    };
+    
+    function getTipo(nombre) { 
+        return AGENTES_ESPECIALES.includes(nombre) ? "especial" : "normal"; 
+    }
+    
+    function formatearTiempo(minutos) {
+        if (minutos >= 60) return `${(minutos/60).toFixed(1)} h`;
+        return `${minutos.toFixed(1)} min`;
+    }
+    
+    function getWeekNumber(d) {
+        const date = new Date(d.getTime());
+        date.setHours(0,0,0,0);
+        date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+        const week1 = new Date(date.getFullYear(), 0, 4);
+        return 1 + Math.round(((date - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+    }
+    
+    function procesarPeriodo(data, periodo, valor) {
+        let filtrados = data;
+        if (periodo === 'dia') filtrados = data.filter(d => d.Fecha === valor);
+        if (periodo === 'semana') {
+            let semanaNum = parseInt(valor);
+            filtrados = data.filter(d => getWeekNumber(new Date(d.Fecha)) === semanaNum);
+        }
+        if (periodo === 'mes') filtrados = data.filter(d => d.Fecha.startsWith(valor));
+        return filtrados;
+    }
+    
+    function agruparPorAgente(data) {
+        let map = new Map();
+        for (let row of data) {
+            let nom = row.Nombre;
+            if (!map.has(nom)) {
+                map.set(nom, { 
+                    nombre: nom, 
+                    disponible: 0, enLlamada: 0, despues: 0, pausaTotal: 0, 
+                    llamadas: 0, totalConexionMinutos: 0,
+                    diffComida: 0, diffBano: 0, diffRetro: 0,
+                    registros: 0
+                });
+            }
+            let acc = map.get(nom);
+            acc.disponible += row.DISPONIBLE || 0;
+            acc.enLlamada += row.EN_LLAMADA || 0;
+            acc.despues += row.DESPUES_LLAMADA || 0;
+            acc.pausaTotal += row.PAUSA || 0;
+            acc.llamadas += row.Llamadas || 0;
+            acc.totalConexionMinutos += row.Total || 0;
+            acc.registros++;
+            
+            let tipo = getTipo(nom);
+            let limites = REGLAS[tipo];
+            acc.diffComida += (row.PAUSECOMIDA || 0) - limites.comida;
+            acc.diffBano += (row.PAUSEBAÑO || 0) - limites.bano;
+            acc.diffRetro += (row.PAUSERETRO || 0) - limites.retro;
+        }
+        return Array.from(map.values());
+    }
+    
+    let charts = {};
+    let datosGlobales = datosCompletos;
+    
+    function actualizarOpciones(periodo) {
+        let valores = new Set();
+        if (periodo === 'dia') {
+            datosGlobales.forEach(d => valores.add(d.Fecha));
+        } else if (periodo === 'semana') {
+            datosGlobales.forEach(d => valores.add(getWeekNumber(new Date(d.Fecha))));
+        } else {
+            datosGlobales.forEach(d => valores.add(d.Fecha.substring(0,7)));
+        }
+        let arr = Array.from(valores).sort();
+        let sel = document.getElementById('valorSelect');
+        sel.innerHTML = '';
+        arr.forEach(v => {
+            let label = (periodo === 'semana') ? `Semana ${v}` : v;
+            sel.appendChild(new Option(label, v));
+        });
+        if (arr.length) sel.value = arr[0];
+    }
+    
+    function renderDashboard() {
+        let periodo = document.getElementById('periodoSelect').value;
+        let valor = document.getElementById('valorSelect').value;
+        
+        if (!valor || !datosGlobales.length) return;
+        
+        let filtrados = procesarPeriodo(datosGlobales, periodo, valor);
+        let agentes = agruparPorAgente(filtrados);
+        
+        if (!agentes.length) { 
+            document.getElementById('tablaResumen').innerHTML = '<p>Sin datos en este periodo</p>'; 
+            return;
+        }
+        
+        // Ordenar agentes alfabéticamente
+        agentes.sort((a,b) => a.nombre.localeCompare(b.nombre));
+        
+        const labels = agentes.map(a => a.nombre.length > 28 ? a.nombre.substring(0,25)+'…' : a.nombre);
+        
+        // Tiempos en horas
+        const dispHoras = agentes.map(a => a.disponible/60);
+        const llamadaHoras = agentes.map(a => a.enLlamada/60);
+        const despuesHoras = agentes.map(a => a.despues/60);
+        const pausaHoras = agentes.map(a => a.pausaTotal/60);
+        
+        // Gráfico 1: Tiempos
+        if (charts.tiempos) charts.tiempos.destroy();
+        const ctxTiempos = document.getElementById('chartTiempos').getContext('2d');
+        charts.tiempos = new Chart(ctxTiempos, {
+            type: 'bar', 
+            data: { labels, datasets: [
+                { label: 'Disponible (horas)', data: dispHoras, backgroundColor: '#2c7da0' },
+                { label: 'En llamada (horas)', data: llamadaHoras, backgroundColor: '#61a5c2' },
+                { label: 'Después llamada (horas)', data: despuesHoras, backgroundColor: '#89c2d9' },
+                { label: 'Pausa total (horas)', data: pausaHoras, backgroundColor: '#c7d9dd' }
+            ] }, 
+            options: { responsive: true, maintainAspectRatio: true }
+        });
+        
+        // Gráfico 2: Cumplimiento de pausas
+        if (charts.cumplimiento) charts.cumplimiento.destroy();
+        const ctxCumplimiento = document.getElementById('chartCumplimiento').getContext('2d');
+        charts.cumplimiento = new Chart(ctxCumplimiento, {
+            type: 'bar', 
+            data: { labels, datasets: [
+                { label: 'Diferencia Comida/Break (min)', data: agentes.map(a=>a.diffComida), backgroundColor: '#e9c46a' },
+                { label: 'Diferencia Baño (min)', data: agentes.map(a=>a.diffBano), backgroundColor: '#f4a261' },
+                { label: 'Diferencia Retro (min)', data: agentes.map(a=>a.diffRetro), backgroundColor: '#e76f51' }
+            ] }, 
+            options: { responsive: true }
+        });
+        
+        // Gráfico 3: Excesos
+        let excLabels=[], excC=[], excB=[], excR=[];
+        agentes.forEach(a=>{
+            if(a.diffComida>0 || a.diffBano>0 || a.diffRetro>0){
+                excLabels.push(a.nombre.length>25 ? a.nombre.substring(0,22)+'…' : a.nombre);
+                excC.push(a.diffComida>0 ? a.diffComida : 0);
+                excB.push(a.diffBano>0 ? a.diffBano : 0);
+                excR.push(a.diffRetro>0 ? a.diffRetro : 0);
+            }
+        });
+        
+        if (charts.excesos) charts.excesos.destroy();
+        const ctxExcesos = document.getElementById('chartExcesos').getContext('2d');
+        if(excLabels.length){
+            charts.excesos = new Chart(ctxExcesos, {
+                type: 'bar', 
+                data: { labels: excLabels, datasets: [
+                    { label:'Exceso Comida/Break (min)', data:excC, backgroundColor:'#e63946' },
+                    { label:'Exceso Baño (min)', data:excB, backgroundColor:'#f4a261' },
+                    { label:'Exceso Retro (min)', data:excR, backgroundColor:'#d62828' }
+                ] }, 
+                options: { responsive: true }
+            });
+        } else {
+            charts.excesos = new Chart(ctxExcesos, { type: 'bar', data: { labels: [], datasets: [] } });
+            ctxExcesos.fillStyle = '#2c7da0';
+            ctxExcesos.font = '14px sans-serif';
+            ctxExcesos.fillText('✅ No hay excesos de pausas en este periodo', 20, 50);
+        }
+        
+        // TABLA DE RESUMEN
+        let htmlTabla = `<table>
+            <thead>
+                <tr style="background:#1e4663; color:white;">
+                    <th>Agente</th>
+                    <th>Días</th>
+                    <th>Llamadas</th>
+                    <th>T. Disp</th>
+                    <th>T. Llamada</th>
+                    <th>🔌 Conexión (Total Minutes)</th>
+                    <th>🍽️ Comida/Break</th>
+                    <th>🚿 Baño</th>
+                    <th>⏪ Retro</th>
+                </tr>
+            </thead>
+            <tbody>`;
+        
+        agentes.forEach(a => {
+            let tipo = getTipo(a.nombre);
+            let limites = REGLAS[tipo];
+            let conexionReqHoras = limites.conexionHoras;
+            let conexionRealHoras = a.totalConexionMinutos / 60;
+            let diffConexion = a.totalConexionMinutos - (conexionReqHoras * 60);
+            
+            // Conexión: MENOS de su tiempo es MALO (rojo), MÁS de su tiempo es BUENO (verde)
+            let conexionClase = diffConexion >= 0 ? 'exceso-bueno' : 'falta-malo';
+            let conexionTexto = diffConexion > 0 ? `✅ Excede ${(diffConexion/60).toFixed(1)} h (Bueno)` : 
+                               (diffConexion < 0 ? `❌ Falta ${(-diffConexion/60).toFixed(1)} h (Malo)` : `✅ Exacto ${conexionReqHoras}h`);
+            
+            // Pausas: valores positivos = exceso (malo), negativos = tiempo disponible (bueno)
+            let comidaClase = a.diffComida > 0 ? 'falta-malo' : (a.diffComida < 0 ? 'exceso-bueno' : 'ok');
+            let banoClase = a.diffBano > 0 ? 'falta-malo' : (a.diffBano < 0 ? 'exceso-bueno' : 'ok');
+            let retroClase = a.diffRetro > 0 ? 'falta-malo' : (a.diffRetro < 0 ? 'exceso-bueno' : 'ok');
+            
+            let comidaTexto = a.diffComida > 0 ? `❌ Excede ${a.diffComida.toFixed(1)} min` : 
+                              (a.diffComida < 0 ? `✅ Tiene ${(-a.diffComida).toFixed(1)} min disponible` : '✅ OK');
+            let banoTexto = a.diffBano > 0 ? `❌ Excede ${a.diffBano.toFixed(1)} min` : 
+                            (a.diffBano < 0 ? `✅ Tiene ${(-a.diffBano).toFixed(1)} min disponible` : '✅ OK');
+            let retroTexto = a.diffRetro > 0 ? `❌ Excede ${a.diffRetro.toFixed(1)} min` : 
+                             (a.diffRetro < 0 ? `✅ Tiene ${(-a.diffRetro).toFixed(1)} min disponible` : '✅ OK');
+            
+            htmlTabla += `<tr>
+                <td><strong>${a.nombre}</strong><br><span style="font-size:10px; color:#666;">${tipo === 'especial' ? '🟢 Especial (requiere 6h)' : '🔵 Normal (requiere 9h)'}</span></td>
+                <td>${a.registros}</td>
+                <td>${a.llamadas}</td>
+                <td>${formatearTiempo(a.disponible)}</td>
+                <td>${formatearTiempo(a.enLlamada)}</td>
+                <td class="${conexionClase}"><strong>${conexionRealHoras.toFixed(1)}h / ${conexionReqHoras}h</strong><br><small>📊 Total: ${a.totalConexionMinutos.toFixed(1)} min</small><br>${conexionTexto}</td>
+                <td class="${comidaClase}">${comidaTexto}</td>
+                <td class="${banoClase}">${banoTexto}</td>
+                <td class="${retroClase}">${retroTexto}</td>
+            </tr>`;
+        });
+        htmlTabla += `</tbody>⋯</table>`;
+        document.getElementById('tablaResumen').innerHTML = htmlTabla;
+    }
+    
+    // Event listeners con actualización correcta
+    const periodoSelect = document.getElementById('periodoSelect');
+    const valorSelect = document.getElementById('valorSelect');
+    const refreshBtn = document.getElementById('refreshBtn');
+    
+    function handlePeriodoChange() {
+        actualizarOpciones(periodoSelect.value);
+        renderDashboard();
+    }
+    
+    function handleValorChange() {
+        renderDashboard();
+    }
+    
+    periodoSelect.addEventListener('change', handlePeriodoChange);
+    valorSelect.addEventListener('change', handleValorChange);
+    refreshBtn.addEventListener('click', renderDashboard);
+    
+    // Inicializar
+    actualizarOpciones('dia');
+    renderDashboard();
+</script>
+</body>
+</html>
