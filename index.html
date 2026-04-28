@@ -297,8 +297,8 @@
             
             // Conexión: MENOS de su tiempo es MALO (rojo), MÁS de su tiempo es BUENO (verde)
             let conexionClase = diffConexion >= 0 ? 'exceso-bueno' : 'falta-malo';
-            let conexionTexto = diffConexion > 0 ? `✅ Excede ${(diffConexion/60).toFixed(1)} h (Bueno)` : 
-                               (diffConexion < 0 ? `❌ Falta ${(-diffConexion/60).toFixed(1)} h (Malo)` : `✅ Exacto ${conexionReqHoras}h`);
+            let conexionTexto = diffConexion > 0 ? `✅ Excede ${(diffConexion/60).toFixed(1)} h` : 
+                               (diffConexion < 0 ? `❌ Falta ${(-diffConexion/60).toFixed(1)} h` : `✅ Exacto ${conexionReqHoras}h`);
             
             // Pausas: valores positivos = exceso (malo), negativos = tiempo disponible (bueno)
             let comidaClase = a.diffComida > 0 ? 'falta-malo' : (a.diffComida < 0 ? 'exceso-bueno' : 'ok');
@@ -313,7 +313,7 @@
                              (a.diffRetro < 0 ? `✅ Tiene ${(-a.diffRetro).toFixed(1)} min disponible` : '✅ OK');
             
             htmlTabla += `<tr>
-                <td><strong>${a.nombre}</strong><br><span style="font-size:10px; color:#666;">${tipo === 'especial' ? '🟢 Especial (requiere 6h)' : '🔵 Normal (requiere 9h)'}</span></td>
+                <td><strong>${a.nombre}</strong><br><span style="font-size:10px; color:#666;">${tipo === 'especial' ? '🟢 Medio tiempo' : '🔵 Tiempo completo'}</span></td>
                 <td>${a.registros}</td>
                 <td>${a.llamadas}</td>
                 <td>${formatearTiempo(a.disponible)}</td>
