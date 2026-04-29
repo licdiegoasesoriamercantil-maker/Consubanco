@@ -58,7 +58,7 @@
 </div>
 
 <script>
-    // ===================== DATOS INCRUSTADOS (desde Tiempos.xlsx) =====================
+    // ===================== DATOS INCRUSTADOS =====================
     const datosCompletos = [
         {Fecha:"2026-04-01",Nombre:"ERICA TERESA PADILLA TORRES",Total:470.1,DISPONIBLE:86,EN_LLAMADA:75.7,DESPUES_LLAMADA:29.6,PAUSA:42,PAUSECOMIDA:60.1,PAUSEBAÑO:12.8,PAUSERETRO:40.1,Llamadas:227},
         {Fecha:"2026-04-01",Nombre:"MIRIAM VEGA",Total:510.8,DISPONIBLE:114,EN_LLAMADA:157.1,DESPUES_LLAMADA:66,PAUSA:0.1,PAUSECOMIDA:1.9,PAUSEBAÑO:10,PAUSERETRO:63.9,Llamadas:187},
@@ -108,6 +108,13 @@
         especial: { comida: 20, bano: 10, retro: 10, conexionHoras: 6 }
     };
     
+    // Días laborales por periodo
+    const DIAS_LABORALES = {
+        dia: 1,
+        semana: 6,
+        mes: 20
+    };
+    
     function getTipo(nombre) { 
         return AGENTES_ESPECIALES.includes(nombre) ? "especial" : "normal"; 
     }
@@ -136,8 +143,13 @@
         return filtrados;
     }
     
-    function agruparPorAgente(data) {
+    // Obtener el periodo actual para saber cuántos días multiplicar
+    let periodoActual = 'dia';
+    
+    function agruparPorAgente(data, periodo) {
         let map = new Map();
+        let diasMultiplicador = DIAS_LABORALES[periodo] || 1;
+        
         for (let row of data) {
             let nom = row.Nombre;
             if (!map.has(nom)) {
@@ -145,7 +157,7 @@
                     nombre: nom, 
                     disponible: 0, enLlamada: 0, despues: 0, pausaTotal: 0, 
                     llamadas: 0, totalConexionMinutos: 0,
-                    diffComida: 0, diffBano: 0, diffRetro: 0,
+                    comidaTotal: 0, banoTotal: 0, retroTotal: 0,
                     registros: 0
                 });
             }
@@ -156,15 +168,35 @@
             acc.pausaTotal += row.PAUSA || 0;
             acc.llamadas += row.Llamadas || 0;
             acc.totalConexionMinutos += row.Total || 0;
+            acc.comidaTotal += row.PAUSECOMIDA || 0;
+            acc.banoTotal += row.PAUSEBAÑO || 0;
+            acc.retroTotal += row.PAUSERETRO || 0;
             acc.registros++;
-            
-            let tipo = getTipo(nom);
-            let limites = REGLAS[tipo];
-            acc.diffComida += (row.PAUSECOMIDA || 0) - limites.comida;
-            acc.diffBano += (row.PAUSEBAÑO || 0) - limites.bano;
-            acc.diffRetro += (row.PAUSERETRO || 0) - limites.retro;
         }
-        return Array.from(map.values());
+        
+        // Calcular diferencias basadas en días del periodo
+        let resultados = [];
+        for (let acc of map.values()) {
+            let tipo = getTipo(acc.nombre);
+            let limites = REGLAS[tipo];
+            
+            // Diferencias multiplicadas por días laborales
+            let comidaEsperada = limites.comida * diasMultiplicador;
+            let banoEsperado = limites.bano * diasMultiplicador;
+            let retroEsperado = limites.retro * diasMultiplicador;
+            let conexionEsperadaHoras = limites.conexionHoras * diasMultiplicador;
+            let conexionEsperadaMinutos = conexionEsperadaHoras * 60;
+            
+            acc.diffComida = acc.comidaTotal - comidaEsperada;
+            acc.diffBano = acc.banoTotal - banoEsperado;
+            acc.diffRetro = acc.retroTotal - retroEsperado;
+            acc.diffConexion = acc.totalConexionMinutos - conexionEsperadaMinutos;
+            acc.conexionEsperadaHoras = conexionEsperadaHoras;
+            acc.diasMultiplicador = diasMultiplicador;
+            
+            resultados.push(acc);
+        }
+        return resultados;
     }
     
     let charts = {};
@@ -192,11 +224,12 @@
     function renderDashboard() {
         let periodo = document.getElementById('periodoSelect').value;
         let valor = document.getElementById('valorSelect').value;
+        periodoActual = periodo;
         
         if (!valor || !datosGlobales.length) return;
         
         let filtrados = procesarPeriodo(datosGlobales, periodo, valor);
-        let agentes = agruparPorAgente(filtrados);
+        let agentes = agruparPorAgente(filtrados, periodo);
         
         if (!agentes.length) { 
             document.getElementById('tablaResumen').innerHTML = '<p>Sin datos en este periodo</p>'; 
@@ -272,7 +305,9 @@
         }
         
         // TABLA DE RESUMEN
-        let htmlTabla = `<table>
+        let periodoTexto = periodo === 'dia' ? 'día' : (periodo === 'semana' ? 'semana' : 'mes');
+        let htmlTabla = `<div style="margin-bottom:10px; font-size:12px; color:#666;">📌 Comparado con ${agentes[0]?.diasMultiplicador || 1} días laborales (${periodoTexto})</div>
+        <table>
             <thead>
                 <tr style="background:#1e4663; color:white;">
                     <th>Agente</th>
@@ -291,14 +326,13 @@
         agentes.forEach(a => {
             let tipo = getTipo(a.nombre);
             let limites = REGLAS[tipo];
-            let conexionReqHoras = limites.conexionHoras;
+            let conexionReqHoras = a.conexionEsperadaHoras;
             let conexionRealHoras = a.totalConexionMinutos / 60;
-            let diffConexion = a.totalConexionMinutos - (conexionReqHoras * 60);
             
             // Conexión: MENOS de su tiempo es MALO (rojo), MÁS de su tiempo es BUENO (verde)
-            let conexionClase = diffConexion >= 0 ? 'exceso-bueno' : 'falta-malo';
-            let conexionTexto = diffConexion > 0 ? `✅ Excede ${(diffConexion/60).toFixed(1)} h` : 
-                               (diffConexion < 0 ? `❌ Falta ${(-diffConexion/60).toFixed(1)} h` : `✅ Exacto ${conexionReqHoras}h`);
+            let conexionClase = a.diffConexion >= 0 ? 'exceso-bueno' : 'falta-malo';
+            let conexionTexto = a.diffConexion > 0 ? `✅ Excede ${(a.diffConexion/60).toFixed(1)} h` : 
+                               (a.diffConexion < 0 ? `❌ Falta ${(-a.diffConexion/60).toFixed(1)} h` : `✅ Exacto ${conexionReqHoras}h`);
             
             // Pausas: valores positivos = exceso (malo), negativos = tiempo disponible (bueno)
             let comidaClase = a.diffComida > 0 ? 'falta-malo' : (a.diffComida < 0 ? 'exceso-bueno' : 'ok');
@@ -312,19 +346,24 @@
             let retroTexto = a.diffRetro > 0 ? `❌ Excede ${a.diffRetro.toFixed(1)} min` : 
                              (a.diffRetro < 0 ? `✅ Tiene ${(-a.diffRetro).toFixed(1)} min disponible` : '✅ OK');
             
+            // Mostrar el límite esperado según periodo
+            let comidaEsperada = limites.comida * a.diasMultiplicador;
+            let banoEsperada = limites.bano * a.diasMultiplicador;
+            let retroEsperada = limites.retro * a.diasMultiplicador;
+            
             htmlTabla += `<tr>
                 <td><strong>${a.nombre}</strong><br><span style="font-size:10px; color:#666;">${tipo === 'especial' ? '🟢 Medio tiempo' : '🔵 Tiempo completo'}</span></td>
-                <td>${a.registros}</td>
+                <td>${a.registros} días (${a.diasMultiplicador} esperados)</td>
                 <td>${a.llamadas}</td>
                 <td>${formatearTiempo(a.disponible)}</td>
                 <td>${formatearTiempo(a.enLlamada)}</td>
                 <td class="${conexionClase}"><strong>${conexionRealHoras.toFixed(1)}h / ${conexionReqHoras}h</strong><br><small>📊 Total: ${a.totalConexionMinutos.toFixed(1)} min</small><br>${conexionTexto}</td>
-                <td class="${comidaClase}">${comidaTexto}</td>
-                <td class="${banoClase}">${banoTexto}</td>
-                <td class="${retroClase}">${retroTexto}</td>
+                <td class="${comidaClase}"><small>Esperado: ${comidaEsperada} min</small><br>${comidaTexto}</td>
+                <td class="${banoClase}"><small>Esperado: ${banoEsperada} min</small><br>${banoTexto}</td>
+                <td class="${retroClase}"><small>Esperado: ${retroEsperada} min</small><br>${retroTexto}</td>
             </tr>`;
         });
-        htmlTabla += `</tbody>⋯</table>`;
+        htmlTabla += `</tbody></table>`;
         document.getElementById('tablaResumen').innerHTML = htmlTabla;
     }
     
